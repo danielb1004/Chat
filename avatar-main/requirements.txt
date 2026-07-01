@@ -1,0 +1,18 @@
+# Servidor Web y API
+fastapi
+uvicorn
+python-dotenv
+
+# Inteligencia Artificial y LangChain
+langchain
+langchain-community
+langchain-google-genai
+langchain-text-splitters
+
+# Base de Datos de Vectores y PDF
+chromadb
+langchain-chroma
+pypdf
+
+# Utilidades
+pydantic
