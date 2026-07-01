@@ -6,6 +6,24 @@ import time
 
 processes = []
 
+def load_environment():
+    """Carga variables de entorno desde avatar-main/.env"""
+    env_path = os.path.join(os.getcwd(), 'avatar-main', '.env')
+    if os.path.exists(env_path):
+        print(f"[SISTEMA] Cargando variables de entorno desde {env_path}")
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    os.environ[key] = value
+                    print(f"[SISTEMA] Variable {key} configurada en el entorno.")
+    else:
+        print(f"[SISTEMA] No se encontró el archivo .env en {env_path}")
+
+
 def run_process(prefix, command, cwd):
     """Ejecuta un proceso y captura su salida línea por línea"""
     try:
@@ -69,6 +87,9 @@ def start_frontend():
 
 if __name__ == '__main__':
     print("Iniciando servicios. Presiona Ctrl+C para detener ambos.")
+    
+    # Cargar variables de entorno
+    load_environment()
     
     # Iniciar procesos en hilos separados
     backend_thread = threading.Thread(target=start_backend, daemon=True)
