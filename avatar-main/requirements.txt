@@ -10,8 +10,7 @@ langchain-google-genai
 langchain-text-splitters
 
 # Base de Datos de Vectores y PDF
-chromadb
-langchain-chroma
+faiss-cpu
 pypdf
 
 # Utilidades

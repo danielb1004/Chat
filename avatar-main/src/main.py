@@ -1,10 +1,8 @@
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .engine import MotorIA
 
-import chromadb
 import os
 
 # 1. Configuración de la App
@@ -13,7 +11,6 @@ app = FastAPI(
     description="Backend para consulta de documentos usando RAG con Gemini 2.5 Flash",
     version="1.0.0"
 )
-client = chromadb.PersistentClient(path="./db")
 
 # 2. Permisos CORS
 app.add_middleware(
@@ -77,23 +74,25 @@ async def startup_event():
 
 @app.get("/modelo")
 def obtener_registros():
-    collection = client.get_collection("langchain")
-
-    datos = collection.get(
-        include=["documents", "metadatas"]
-    )
+    if not motor.db:
+        return {
+            "coleccion": "faiss",
+            "cantidad_registros": 0,
+            "registros": []
+        }
 
     registros = []
-
-    for i in range(len(datos["ids"])):
+    
+    # En FAISS, los documentos se encuentran en el docstore
+    for doc_id, doc in motor.db.docstore._dict.items():
         registros.append({
-            "id": datos["ids"][i],
-            "documento": datos["documents"][i],
-            "metadata": datos["metadatas"][i]
+            "id": doc_id,
+            "documento": doc.page_content,
+            "metadata": doc.metadata
         })
 
     return {
-        "coleccion": "langchain",
+        "coleccion": "faiss",
         "cantidad_registros": len(registros),
         "registros": registros
     }

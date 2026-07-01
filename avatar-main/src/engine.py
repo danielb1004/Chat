@@ -10,7 +10,7 @@ from langchain_google_genai import (
 )
 
 # Vector
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import FAISS
 
 # Prompt
 from langchain_core.prompts import ChatPromptTemplate
@@ -47,94 +47,40 @@ class MotorIA:
     def inicializar_memoria(self, ruta_pdf=None):
         # Crea la base de datos desde un PDF o la carga si ya existe.
         if ruta_pdf:
-            import shutil
             import time
-            import gc
             
             chunks = preparar_documentos(ruta_pdf)
 
-            # En src/engine.py (dentro de inicializar_memoria)
-
-            # 1. Intentar liberar la conexión de ChromaDB de la memoria
-            if hasattr(self, "db") and self.db is not None:
-                try:
-                    # Si es el wrapper de LangChain, el cliente real está en _client
-                    if hasattr(self.db, "_client") and hasattr(
-                        self.db._client, "close"
-                    ):
-                        self.db._client.close()
-                    elif hasattr(self.db, "close"):
-                        self.db.close()
-                except Exception as e:
-                    print(f"Aviso al cerrar db: {e}")
-
-                # Quitamos la referencia y forzamos al recolector de basura
-                self.db = None
-
-            gc.collect()
-            time.sleep(0.2)  # Pausa estratégica para que Windows suelte el archivo
-            
-            # 2. Limpieza total de intentos fallidos
+            # Limpieza total de base de datos previa
             if os.path.exists(self.persist_directory):
                 try:
                     shutil.rmtree(self.persist_directory)
                     print("Carpeta db eliminada para iniciar limpia.")
                     time.sleep(0.1)  # Breve pausa tras borrar
-                except PermissionError:
-                    print(
-                        "Windows mantiene el archivo bloqueado. Intentando borrar archivos internos..."
-                    )
-                    # Plan B: Si rmtree falla, vaciamos lo que se pueda antes de continuar
-                    for root, dirs, files in os.walk(
-                        self.persist_directory, topdown=False
-                    ):
-                        for name in files:
-                            try:
-                                os.remove(os.path.join(root, name))
-                            except Exception:
-                                pass
-
-            # 2. Crear instancia nueva
-            self.db = Chroma(
-                persist_directory=self.persist_directory,
-                embedding_function=self.embeddings
-            )
-
-            # 3. Inserción INDIVIDUAL con manejo de errores
-            print(f"Iniciando carga de {len(chunks)} fragmentos...")
-            exitos = 0
-            errores = 0
-
-            for i, chunk in enumerate(chunks):
-                try:
-                    # Generamos el ID único
-                    origen = chunk.metadata.get("source", "documento")
-                    nombre_base = os.path.basename(origen).replace(".", "_").replace(" ", "_")
-                    custom_id = f"{nombre_base}_chunk_{i}"
-
-                    # 🔥 CRUCIAL: Guardamos el ID también DENTRO de la metadata para LangChain
-                    chunk.metadata["id"] = custom_id
-
-                    # Insertamos pasando el ID explícito a Chroma
-                    self.db.add_documents(documents=[chunk], ids=[custom_id])
-                    exitos += 1
-                    
-                    if i % 5 == 0:
-                        print(f"Procesados {i}/{len(chunks)} con ID: {custom_id}...")
-                        time.sleep(1) 
                 except Exception as e:
-                    print(f"Error en chunk {i}: {e}")
-                    errores += 1
-                print(f"Proceso terminado. Éxitos: {exitos}, Errores: {errores}")
+                    print(f"No se pudo eliminar la base de datos anterior: {e}")
+
+            # 2. Crear instancia nueva con FAISS
+            print(f"Iniciando carga de {len(chunks)} fragmentos con FAISS...")
+            try:
+                self.db = FAISS.from_documents(chunks, self.embeddings)
+                self.db.save_local(self.persist_directory)
+                print(f"Base de datos FAISS creada exitosamente en {self.persist_directory}.")
+            except Exception as e:
+                print(f"Error al crear la base de datos FAISS: {e}")
 
         else:
             # Si no se pasa un PDF, cargamos la base de datos existente de forma segura
-            if os.path.exists(self.persist_directory):
-                self.db = Chroma(
-                    persist_directory=self.persist_directory,
-                    embedding_function=self.embeddings
-                )
-                print("Base de datos Chroma cargada correctamente desde el almacenamiento persistente.")
+            if os.path.exists(self.persist_directory) and os.path.exists(os.path.join(self.persist_directory, "index.faiss")):
+                try:
+                    self.db = FAISS.load_local(
+                        self.persist_directory, 
+                        self.embeddings, 
+                        allow_dangerous_deserialization=True
+                    )
+                    print("Base de datos FAISS cargada correctamente desde el almacenamiento persistente.")
+                except Exception as e:
+                    print(f"Error al cargar base de datos FAISS existente: {e}")
             else:
                 print("No hay base de datos previa y no se proporcionó PDF.")
 
