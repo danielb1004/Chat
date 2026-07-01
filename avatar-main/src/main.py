@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .engine import MotorIA
@@ -58,6 +59,54 @@ async def configurar_base_datos():
     motor.inicializar_memoria(ruta_completa)
     
     return {"mensaje": f"Base de datos cargada exitosamente con {archivos[0]}"}
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page():
+    """Sirve la interfaz gráfica de administración"""
+    admin_html_path = os.path.join(os.path.dirname(__file__), "admin.html")
+    try:
+        with open(admin_html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="No se pudo cargar la interfaz de administración")
+
+@app.post("/admin/upload")
+async def upload_document(file: UploadFile = File(...), password: str = Form(...)):
+    """Recibe un PDF y contraseña, valida y actualiza la base de conocimiento"""
+    # 1. Validar contraseña
+    admin_pwd = os.getenv("ADMIN_PASSWORD", "admin123")
+    if password != admin_pwd:
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+    
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un PDF")
+    
+    docs_path = os.path.join(os.path.dirname(__file__), "..", "docs")
+    os.makedirs(docs_path, exist_ok=True)
+    
+    # 2. Eliminar PDFs antiguos para mantener solo el actual
+    for f in os.listdir(docs_path):
+        if f.endswith('.pdf'):
+            try:
+                os.remove(os.path.join(docs_path, f))
+            except Exception as e:
+                print(f"No se pudo eliminar {f}: {e}")
+            
+    # 3. Guardar nuevo archivo
+    file_path = os.path.join(docs_path, file.filename)
+    try:
+        import shutil
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar el archivo: {e}")
+        
+    # 4. Actualizar base de datos FAISS
+    try:
+        motor.inicializar_memoria(file_path)
+        return {"mensaje": f"Base de datos actualizada con éxito: {file.filename}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al procesar en FAISS: {e}")
 
 @app.on_event("startup")
 async def startup_event():
